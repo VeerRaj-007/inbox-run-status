@@ -1,21 +1,29 @@
 import express from "express";
+import fs from "node:fs/promises";
+
 import { readRunLog } from "../services/runLogReader.js";
 import { parseRun } from "../classify/parse.js";
 import { evaluateFeedStaleness } from "../classify/feedstaleness.js";
 import { classifyRun } from "../classify/classifyrun.js";
-import config from "../../data/config.json" with { type: "json" };
+
+import { RUN_LOG_FILE, CONFIG_FILE } from "../../dataPaths.js";
 
 const router = express.Router();
 
 /**
- * Classify one entry from readRunLog().
- *
- * Feed data is only evaluated for a valid "ok" run.
- * This preserves the classifier rule that failed runs are
- * classified before touching feed data.
+ * Read config.json from the root-level data directory.
  */
-function classifyEntry(entry) {
-  // readRunLog() already identified this as an UNKNOWN entry.
+async function readConfig() {
+  const rawConfig = await fs.readFile(CONFIG_FILE, "utf8");
+
+  return JSON.parse(rawConfig);
+}
+
+/**
+ * Classify one entry from readRunLog().
+ */
+function classifyEntry(entry, config) {
+  // The reader already identified this line as UNKNOWN.
   if (entry.type === "unknown") {
     const classification = classifyRun({
       parseResult: {
@@ -32,10 +40,10 @@ function classifyEntry(entry) {
     };
   }
 
-  // The JSON was parsed successfully, now validate its structure.
+  // Validate the already-parsed JSON object.
   const parseResult = parseRun(entry.data);
 
-  // Parse/validation failure -> UNKNOWN.
+  // Invalid/missing fields -> UNKNOWN.
   if (parseResult.type === "unknown") {
     const classification = classifyRun({
       parseResult,
@@ -55,9 +63,7 @@ function classifyEntry(entry) {
   const run = parseResult.data;
 
   /*
-   * FAILED is classified immediately.
-   *
-   * No feed data is inspected here.
+   * FAILED is decided before feed data is inspected.
    */
   if (run.status === "fail") {
     const classification = classifyRun({
@@ -81,9 +87,7 @@ function classifyEntry(entry) {
   }
 
   /*
-   * Valid "ok" run.
-   *
-   * Now it is appropriate to inspect feed freshness.
+   * Only successful runs reach feed freshness evaluation.
    */
   const runDate = run.started_at.slice(0, 10);
 
@@ -119,15 +123,16 @@ function classifyEntry(entry) {
 /**
  * GET /api/runs
  *
- * Returns every line as a classified entry.
- *
- * Invalid JSON / invalid structure stays visible as UNKNOWN.
+ * Returns every classified run, including UNKNOWN entries.
  */
 router.get("/runs", async (req, res, next) => {
   try {
-    const entries = await readRunLog("data/run-log.jsonl");
+    const [entries, config] = await Promise.all([
+      readRunLog(RUN_LOG_FILE),
+      readConfig(),
+    ]);
 
-    const classifiedRuns = entries.map(classifyEntry);
+    const classifiedRuns = entries.map((entry) => classifyEntry(entry, config));
 
     res.json({
       runs: classifiedRuns,
@@ -142,20 +147,16 @@ router.get("/runs", async (req, res, next) => {
  * GET /api/latest-good
  *
  * Returns the most recent OK or PARTIAL run.
- *
- * This endpoint exists specifically for the failed-day banner:
- *
- *   "No brief produced.
- *    Last good run: #X on <date>"
- *
- * FAILED and UNKNOWN runs are never returned here.
  */
 router.get("/latest-good", async (req, res, next) => {
   try {
-    const entries = await readRunLog("data/run-log.jsonl");
+    const [entries, config] = await Promise.all([
+      readRunLog(RUN_LOG_FILE),
+      readConfig(),
+    ]);
 
     const classifiedRuns = entries
-      .map(classifyEntry)
+      .map((entry) => classifyEntry(entry, config))
       .filter(
         (entry) =>
           entry.type === "run" &&
@@ -168,10 +169,6 @@ router.get("/latest-good", async (req, res, next) => {
       });
     }
 
-    /*
-     * Use started_at rather than array position so the endpoint
-     * is based on the run's actual timestamp.
-     */
     classifiedRuns.sort(
       (a, b) =>
         new Date(b.started_at).getTime() - new Date(a.started_at).getTime(),

@@ -1,12 +1,7 @@
 import fs from "node:fs";
 import readline from "node:readline";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-const LOG_FILE = path.resolve(__dirname, "../../data/run-log.jsonl");
+import { RUN_LOG_FILE } from "../dataPaths.js";
 
 const feeds = ["granola", "meet", "dropzone"];
 
@@ -48,8 +43,14 @@ const maxLag = Object.fromEntries(
   ]),
 );
 
-const stream = fs.createReadStream(LOG_FILE, {
+const stream = fs.createReadStream(RUN_LOG_FILE, {
   encoding: "utf8",
+});
+
+stream.on("error", (error) => {
+  console.error(`Could not read run log: ${RUN_LOG_FILE}`);
+  console.error(error.message);
+  process.exitCode = 1;
 });
 
 const rl = readline.createInterface({
@@ -69,11 +70,11 @@ for await (const rawLine of rl) {
   try {
     entry = JSON.parse(line);
   } catch {
-    // Ignore malformed lines for this report.
+    // Ignore malformed lines for this analysis report.
     continue;
   }
 
-  // Only healthy source runs are considered.
+  // Only raw status=ok runs are considered.
   if (entry?.status !== "ok") {
     continue;
   }
