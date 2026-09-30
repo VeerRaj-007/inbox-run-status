@@ -22,13 +22,12 @@ A feed is stale when its newest file (`last_file`) is more than N days
 older than the run date.
 
 - granola and meet: N = 3 (the `feed_freshness_threshold_days` in config.json)
-- dropzone: N = TODO (picked from the healthy-run data, see below)
+- dropzone: N = 12 (picked from the healthy-run data, see below)
   Why per-feed: dropzone is manual file drops, so gaps are normal there.
   With one global threshold of 3, dropzone would flag almost every day,
   and a screen that is always yellow gets ignored.
   Cost: a truly dead dropzone feed stays hidden for longer.
-  How I picked the number: TODO (e.g. "max lag on healthy runs was X days,
-  so I set the limit just above it").
+  How I picked the number: 12 days (run #114, run date 2026-07-20, last_file 2026-07-08)
 
 ## Why "partial" exists
 
