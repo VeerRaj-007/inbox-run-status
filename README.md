@@ -214,4 +214,4 @@ The implementation follows these assumptions from `decision.md`:
 
 ## Time spent
 
-Time spent: `[add actual time]`
+Time spent: `2 hours 40 minutes`
